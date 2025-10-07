@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import re
 import streamlit as st
-
+from thefuzz import process
 
 # In[2]:
 
@@ -88,7 +88,8 @@ def compare_grocery_prices(
     df2,
     name_col='name',
     price_col='price',
-    store_names=('Store 1', 'Store 2')
+    store_names=('Hyvee', 'Aldi'),
+    score_cutoff=60
 ):
     total_1 = 0.0
     total_2 = 0.0
@@ -99,31 +100,36 @@ def compare_grocery_prices(
     print("-" * 110)
 
     for item in shopping_list:
-        # Find matching rows sorted by price
-        match_1 = df1[df1[name_col].str.contains(item, case=False, na=False)].sort_values(price_col)
-        match_2 = df2[df2[name_col].str.contains(item, case=False, na=False)].sort_values(price_col)
+        # Fuzzy match in each store's product list
+        match_1_result = process.extractOne(item, df1[name_col], score_cutoff=score_cutoff)
+        match_2_result = process.extractOne(item, df2[name_col], score_cutoff=score_cutoff)
 
-        row_1 = match_1.iloc[0] if not match_1.empty else None
-        row_2 = match_2.iloc[0] if not match_2.empty else None
-
-        name_1 = row_1[name_col] if row_1 is not None else "N/A"
-        price_1 = row_1[price_col] if row_1 is not None else None
-
-        name_2 = row_2[name_col] if row_2 is not None else "N/A"
-        price_2 = row_2[price_col] if row_2 is not None else None
-
-        if price_1 is not None:
+        if match_1_result:
+            match_1 = match_1_result[0]
+            row_1 = df1[df1[name_col] == match_1].iloc[0]
+            name_1 = row_1[name_col]
+            price_1 = row_1[price_col]
             total_1 += price_1
         else:
+            name_1 = "N/A"
+            price_1 = None
             missing_items.append((item, store_names[0]))
 
-        if price_2 is not None:
+        if match_2_result:
+            match_2 = match_2_result[0]
+            row_2 = df2[df2[name_col] == match_2].iloc[0]
+            name_2 = row_2[name_col]
+            price_2 = row_2[price_col]
             total_2 += price_2
         else:
+            name_2 = "N/A"
+            price_2 = None
             missing_items.append((item, store_names[1]))
 
-        print(f"{item:<15} | {f'{name_1} (${price_1:.2f})' if price_1 else 'N/A':<40} | {f'{name_2} (${price_2:.2f})' if price_2 else 'N/A':<40}")
+        # Display row
+        print(f"{item:<15} | {f'{name_1} (${price_1:.2f})' if price_1 is not None else 'N/A':<40} | {f'{name_2} (${price_2:.2f})' if price_2 is not None else 'N/A':<40}")
 
+        # Save row
         comparison_table.append({
             'item': item,
             store_names[0] + '_item': name_1,
@@ -132,10 +138,12 @@ def compare_grocery_prices(
             store_names[1] + '_price': price_2,
         })
 
+    # Totals
     print("\nTOTAL")
     print(f"{store_names[0]}: ${total_1:.2f}")
     print(f"{store_names[1]}: ${total_2:.2f}")
 
+    # Missing
     if missing_items:
         print("\n⚠️ Missing Items:")
         for item, store in missing_items:
